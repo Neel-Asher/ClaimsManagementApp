@@ -82,3 +82,5 @@ htmlcov/
 *.csv
 *.xlsx
 *.parquet
+
+._pycache__/
