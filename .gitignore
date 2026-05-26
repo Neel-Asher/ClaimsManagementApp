@@ -83,4 +83,5 @@ htmlcov/
 *.xlsx
 *.parquet
 
-._pycache__/
+# BUT keep sample datasets (needed for ML training and demo)
+!data/sample/*.csv
