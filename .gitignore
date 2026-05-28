@@ -7,7 +7,9 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
 *.log
+client/dist/
 
 # =========================
 # IDEs & Editors
@@ -80,5 +82,13 @@ htmlcov/
 # =========================
 # Ignore bulk upload files and generated datasets
 *.csv
+!ml-service/data/sample/*.csv
 *.xlsx
 *.parquet
+# =========================
+# Project-Specific Exclusions
+# =========================
+*.pem
+*.mp4
+Demo_Recording_Script.md
+ClaimsManagementApp_Requirements.txt
