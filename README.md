@@ -66,7 +66,7 @@ The system is composed of four independently deployable microservices plus a ded
    │  React 19    │  │  Java 17 │  │ Py 3.11│  │ Node 18+       │
    └──────┬───────┘  └────┬─────┘  └────────┘  └────────────────┘
           │               │              ▲               ▲
-          │ REST + WS     │ REST         │ fraud predict  │ trigger event
+          │ REST + WS     │ REST         │ fraud predict │ trigger event
           └───────────────┤              └───────────────┘
                           │
                           ▼
