@@ -1,0 +1,313 @@
+{
+  "info": {
+    "name": "InsuranceIQ API",
+    "description": "AI-Powered Insurance Intelligence Platform — Spring Boot Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api" },
+    { "key": "token", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('token', jsonData.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@insuranceiq.com\",\n  \"password\": \"password123\",\n  \"role\": \"admin\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (Agent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('token', jsonData.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"agent@insuranceiq.com\",\n  \"password\": \"password123\",\n  \"role\": \"agent\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (Customer)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('token', jsonData.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@insuranceiq.com\",\n  \"password\": \"password123\",\n  \"role\": \"customer\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (Claims Manager)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.collectionVariables.set('token', jsonData.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"claims@insuranceiq.com\",\n  \"password\": \"password123\",\n  \"role\": \"claims_manager\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@insuranceiq.com\",\n  \"password\": \"password123\",\n  \"role\": \"customer\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "Get All Customers",
+          "request": { "method": "GET", "url": "{{baseUrl}}/customers" }
+        },
+        {
+          "name": "Get Customer by ID",
+          "request": { "method": "GET", "url": "{{baseUrl}}/customers/1" }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/customers",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Customer\",\n  \"email\": \"newcustomer@email.com\",\n  \"phone\": \"+91-9876543220\",\n  \"dob\": \"1993-06-15\",\n  \"address\": \"100 Test Lane, Pune\",\n  \"kyc_status\": \"pending\",\n  \"agent_id\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Customer",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/customers/1",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Amit Patel Updated\",\n  \"kyc_status\": \"verified\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Customer",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/customers/1" }
+        }
+      ]
+    },
+    {
+      "name": "Agents",
+      "item": [
+        {
+          "name": "Get All Agents",
+          "request": { "method": "GET", "url": "{{baseUrl}}/agents" }
+        },
+        {
+          "name": "Create Agent",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/agents",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Agent\",\n  \"email\": \"newagent@insuranceiq.com\",\n  \"license_no\": \"AGT-2024-005\",\n  \"region\": \"Pune\",\n  \"commission_pct\": 10,\n  \"status\": \"active\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "Get All Products",
+          "request": { "method": "GET", "url": "{{baseUrl}}/products" }
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/products",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TravelSafe Basic\",\n  \"type\": \"Health\",\n  \"coverage_amount\": 200000,\n  \"premium_rate\": 5000,\n  \"term_months\": 12\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Policies",
+      "item": [
+        {
+          "name": "Get All Policies",
+          "request": { "method": "GET", "url": "{{baseUrl}}/policies" }
+        },
+        {
+          "name": "Get Policy by ID",
+          "request": { "method": "GET", "url": "{{baseUrl}}/policies/POL-2024-001" }
+        },
+        {
+          "name": "Create Policy",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/policies",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": 1,\n  \"agent_id\": 1,\n  \"product_id\": 1,\n  \"start_date\": \"2025-01-01\",\n  \"end_date\": \"2026-01-01\",\n  \"premium_amount\": 12000,\n  \"status\": \"active\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Claims",
+      "item": [
+        {
+          "name": "Get All Claims",
+          "request": { "method": "GET", "url": "{{baseUrl}}/claims" }
+        },
+        {
+          "name": "Submit Claim",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/claims",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_id\": \"POL-2024-001\",\n  \"customer_id\": 1,\n  \"claim_type\": \"Health\",\n  \"incident_date\": \"2025-01-15\",\n  \"claim_amount\": 50000,\n  \"description\": \"Emergency treatment\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Claim Status",
+          "request": {
+            "method": "PUT",
+            "url": "{{baseUrl}}/claims/CLM-2024-001",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fraud Prediction",
+      "item": [
+        {
+          "name": "Predict Fraud",
+          "request": { "method": "POST", "url": "{{baseUrl}}/predict/fraud/CLM-2024-003" }
+        },
+        {
+          "name": "Get All Predictions",
+          "request": { "method": "GET", "url": "{{baseUrl}}/predict/fraud/all" }
+        },
+        {
+          "name": "Get Flagged Predictions",
+          "request": { "method": "GET", "url": "{{baseUrl}}/predict/fraud/flagged" }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Dashboard Summary",
+          "request": { "method": "GET", "url": "{{baseUrl}}/analytics/dashboard-summary" }
+        },
+        {
+          "name": "Top Agents",
+          "request": { "method": "GET", "url": "{{baseUrl}}/analytics/top-agents" }
+        },
+        {
+          "name": "Fraud Flagged Claims",
+          "request": { "method": "GET", "url": "{{baseUrl}}/analytics/fraud-flagged-claims" }
+        },
+        {
+          "name": "Claims Trend",
+          "request": { "method": "GET", "url": "{{baseUrl}}/analytics/claims-trend" }
+        },
+        {
+          "name": "Loss Ratio",
+          "request": { "method": "GET", "url": "{{baseUrl}}/analytics/loss-ratio" }
+        },
+        {
+          "name": "Renewal Rate",
+          "request": { "method": "GET", "url": "{{baseUrl}}/analytics/renewal-rate" }
+        }
+      ]
+    }
+  ]
+}

@@ -2,6 +2,10 @@
 ### Branch: `dev-node-notifications-backend`
 
 > **Insurance Intelligence Platform** — A real-time notification microservice built with Node.js, Express, and Socket.IO. It manages all push notifications for the platform, delivering claim updates, KYC approvals, and policy renewal alerts to users in real time via WebSockets. It also runs a scheduled cron job for policy renewal reminders.
+# InsuranceIQ — React Frontend
+### Branch: `dev-react-frontend`
+
+> **Insurance Intelligence Platform** — A role-based, multi-dashboard React SPA that serves as the primary user interface for the entire InsuranceIQ ecosystem. It communicates with the Spring Boot backend via REST and connects to the Node.js notification service via WebSockets.
 
 ---
 
@@ -21,272 +25,368 @@
 12. [Running the Service](#running-the-service)
 13. [React Client Integration](#react-client-integration)
 14. [Inter-Service Communication](#inter-service-communication)
+5. [Pages & Role Access](#pages--role-access)
+6. [Service Layer](#service-layer)
+7. [Authentication Flow](#authentication-flow)
+8. [Environment Variables](#environment-variables)
+9. [Installation & Setup](#installation--setup)
+10. [Running the App](#running-the-app)
+11. [Docker Setup](#docker-setup)
+12. [Inter-Service Communication](#inter-service-communication)
+13. [Component Architecture](#component-architecture)
 
 ---
 
 ## Project Overview
 
-The Notification Service is an independently deployable microservice that acts as the real-time communication backbone of the InsuranceIQ platform. It is triggered by the Spring Boot backend whenever a significant business event occurs (e.g., a claim is approved or rejected, a KYC check completes, a policy is about to expire).
+The React frontend is a single-page application that provides role-aware dashboards and workflows for four user types: **Admin**, **Agent**, **Customer**, and **Claims Manager**. It integrates with:
 
-Key responsibilities:
+- **Spring Boot backend** (`http://localhost:8080/api`) — all REST operations (auth, claims, policies, customers, fraud, analytics)
+- **Node.js notification service** (`http://localhost:3001`) — real-time WebSocket events via Socket.IO
 
-- **Real-time delivery:** Push notifications to connected React clients over WebSockets using Socket.IO
-- **Persistent storage:** Store all notification records in MySQL for inbox retrieval
-- **Role-based routing:** Emit notifications to individual users or entire role groups (Admin, Agent, Customer, Claims Manager)
-- **Scheduled reminders:** A `node-cron` job checks for upcoming policy renewals daily and pushes reminders automatically
-- **REST API:** Expose HTTP endpoints for Spring Boot to trigger events and for the React client to fetch notification history
+Key features include claims submission and workflow management, fraud report viewing, policy and customer management, analytics dashboards with charts, and a real-time notifications center.
 
 ---
 
 ## System Architecture
 
 ```
+┌─────────────────────────────────────────────────────────────┐
+│                 Spring Boot API (Port 8080)                 │
+│                                                             │
+│  ┌──────────────┐  ┌───────────────────┐  ┌─────────────┐   │
+│  │  Controllers │→ │  Service Layer    │→ │ Repositories│   │
+│  │  (REST API)  │  │  (Business Logic) │  │ (Spring JPA)│   │
+│  └──────────────┘  └───────────────────┘  └──────┬──────┘   │
+│                                                  │          │
+│  ┌──────────────────────────────┐                │          │
+│  │  Security (JWT Filter Chain) │          MySQL :3306      │
+│  └──────────────────────────────┘                │          │
+│                                             insuranceiq_db  │
+└─────────────────────────────────────────────────────────────┘
+         │                            │
+         │ HTTP POST /predict/fraud   │ HTTP POST /notify
+         ▼                            ▼
+┌────────────────────┐    ┌────────────────────────┐
+│ Python FastAPI ML  │    │ Node.js Notification   │
+│ Service :8000      │    │ Service :3001/5001     │
+└────────────────────┘    └────────────────────────┘
 ┌──────────────────────────────────────────────────────────────┐
-│           Node.js Notification Service (Port 5001)           │
+│                     React SPA (Port 5173)                    │
 │                                                              │
-│  ┌───────────────────────────────────────────────────────┐   │
-│  │               Express HTTP Server                     │   │
-│  │  /notifications  │  /events  │  /health               │   │
-│  └───────────────────────────────────────────────────────┘   │
+│   ┌─────────────┐  ┌───────────────┐  ┌──────────────────┐   │
+│   │  AuthContext│  │  React Router │  │  Vite Dev Server │   │
+│   │  (JWT store)│  │  (role-guard) │  │  (HMR / proxy)   │   │
+│   └─────────────┘  └───────────────┘  └──────────────────┘   │
 │                                                              │
-│  ┌───────────────────────────────────────────────────────┐   │
-│  │            Socket.IO (WebSocket Layer)                │   │
-│  │  JWT Auth Middleware → Room Assignment (user/role)    │   │
-│  └───────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌───────────────────────────────────────────────────────┐   │
-│  │         node-cron (Scheduled Jobs)                    │   │
-│  │  Daily: Scan for expiring policies → push reminders   │   │
-│  └───────────────────────────────────────────────────────┘   │
-│                                                              │
-│  ┌───────────────────────────────────────────────────────┐   │
-│  │         MySQL (via mysql2 driver)                     │   │
-│  │  notifications table │ events log                     │   │
-│  └───────────────────────────────────────────────────────┘   │
-└──────────────────────────┬───────────────────────────────────┘
-                           │
-          ┌────────────────┼────────────────────┐
-          │                │                    │
-          ▼                ▼                    ▼
-  ┌──────────────┐ ┌───────────────┐  ┌──────────────────┐
-  │ Spring Boot  │ │  React SPA    │  │ React SPA        │
-  │ :8080        │ │  (HTTP calls) │  │ (WebSocket conn) │
-  │ (triggers)   │ │              │  │                  │
-  └──────────────┘ └───────────────┘  └──────────────────┘
+│   ┌──────────────────────────────────────────────────────┐   │
+│   │                    Service Layer                     │   │
+│   │  api.js (Axios)  │  socketService.js (Socket.IO)     │   │
+│   │  authService.js  │  dataService.js                   │   │
+│   └──────────────────────────────────────────────────────┘   │
+└──────────────────────────┬───────────────────┬───────────────┘
+                           │ HTTP/REST         │ WebSocket
+                           ▼                   ▼
+              ┌────────────────────┐  ┌─────────────────────┐
+              │  Spring Boot API   │  │ Node.js Notification│
+              │  :8080/api         │  │ Service :3001       │
+              └────────────────────┘  └─────────────────────┘
 ```
 
 ---
 
 ## Tech Stack & Versions
 
-| Technology    | Version   | Purpose                                         |
-|---------------|-----------|-------------------------------------------------|
-| Node.js       | ≥18.x     | JavaScript runtime                              |
-| Express       | ^4.19.2   | HTTP server and REST routing                    |
-| Socket.IO     | ^4.7.5    | WebSocket server with room support              |
-| mysql2        | ^3.10.0   | MySQL driver (promise-based)                    |
-| jsonwebtoken  | ^9.0.2    | JWT validation for socket auth middleware       |
-| node-cron     | ^3.0.3    | Cron job scheduler (policy renewal reminders)   |
-| axios         | ^1.7.2    | HTTP client (calls to Spring Boot if needed)    |
-| dotenv        | ^16.4.5   | `.env` file loading                             |
-| cors          | ^2.8.5    | CORS middleware for Express                     |
-| helmet        | ^7.1.0    | HTTP security headers                           |
-| nodemon       | ^3.1.3    | Dev: auto-restart on file changes               |
-| npm           | ≥9.x      | Package manager                                 |
+| Technology                        | Version  | Purpose                                    |
+|-----------------------------------|----------|--------------------------------------------|
+| Java                              | 17       | Runtime language                           |
+| Spring Boot                       | 3.2.5    | Application framework                      |
+| Spring Boot Starter Web           | 3.2.5    | REST controller support (Spring MVC)       |
+| Spring Boot Starter Data JPA      | 3.2.5    | ORM / Hibernate integration                |
+| Spring Boot Starter Security      | 3.2.5    | Security filter chain, RBAC                |
+| Spring Boot Starter Validation    | 3.2.5    | Bean validation (`@Valid`, `@NotNull`)     |
+| Hibernate (via JPA)               | 6.x      | ORM layer (MySQL dialect)                  |
+| MySQL Connector/J                 | latest   | JDBC driver for MySQL                      |
+| JJWT (jjwt-api / impl / jackson)  | 0.12.5   | JWT generation and validation              |
+| Springdoc OpenAPI (Swagger UI)    | 2.3.0    | Auto-generated API documentation           |
+| Lombok                            | latest   | Boilerplate reduction (getters, builders)  |
+| Maven                             | 3.x      | Build and dependency management            |
+| Technology          | Version    | Purpose                                 |
+|---------------------|------------|-----------------------------------------|
+| React               | ^19.2.6    | UI framework                            |
+| React DOM           | ^19.2.6    | DOM rendering                           |
+| React Router DOM    | ^7.15.1    | Client-side routing with role guards    |
+| Vite                | ^8.0.12    | Build tool and dev server               |
+| @vitejs/plugin-react| ^6.0.1     | Vite React plugin (Babel/SWC)           |
+| Tailwind CSS        | ^4.3.0     | Utility-first CSS styling               |
+| @tailwindcss/vite   | ^4.3.0     | Tailwind Vite integration               |
+| Axios               | ^1.16.1    | HTTP client for REST API calls          |
+| Socket.IO Client    | ^4.8.3     | WebSocket client for real-time events   |
+| Recharts            | ^3.8.1     | Chart library for analytics dashboards  |
+| Lucide React        | ^1.16.0    | Icon library                            |
+| ESLint              | ^10.3.0    | Linting                                 |
+| Node.js (runtime)   | ≥18.x      | Required for Vite and npm               |
 
 ---
 
 ## Folder Structure
 
 ```
-notification-service/
-├── server.js                       # Entry point: HTTP server + Socket.IO init + cron start
-├── package.json                    # Dependencies and npm scripts
-├── schema.sql                      # MySQL schema for notifications database
-├── .env.example                    # Template environment file
+server/
+├── Dockerfile                          # Container definition
+├── docker-compose.yml                  # Docker Compose (app + MySQL)
+├── pom.xml                             # Maven build descriptor
+├── InsuranceIQ.postman_collection.json # Postman collection for API testing
 │
-├── src/
-│   ├── app.js                      # Express app setup (middleware, route registration)
-│   │
-│   ├── config/
-│   │   └── db.js                   # mysql2 pool creation and testConnection()
-│   │
-│   ├── controllers/
-│   │   ├── notificationController.js  # CRUD handlers for notification records
-│   │   └── eventController.js         # Handlers for incoming event triggers from Spring Boot
-│   │
-│   ├── cron/
-│   │   └── renewalCron.js          # node-cron: daily policy renewal reminder job
-│   │
-│   ├── middleware/
-│   │   └── authMiddleware.js       # Express JWT auth middleware (for REST routes)
-│   │
-│   ├── routes/
-│   │   ├── notificationRoutes.js   # GET /notifications, PATCH /notifications/:id/read
-│   │   └── eventRoutes.js          # POST /events/trigger
-│   │
-│   ├── services/
-│   │   └── notificationService.js  # DB queries and Socket.IO emission logic
-│   │
-│   └── sockets/
-│       └── socketManager.js        # Socket.IO server init, JWT auth middleware, room management
+└── src/main/java/com/insuranceiq/
+    │
+    ├── InsuranceIqApplication.java     # @SpringBootApplication entry point
+    │
+    ├── config/
+    │   └── OpenApiConfig.java          # Swagger/OpenAPI bean configuration
+    │
+    ├── controller/                     # REST controllers (one per domain)
+    │   ├── AuthController.java         # POST /api/auth/login, /register
+    │   ├── AgentController.java        # CRUD for agents
+    │   ├── AnalyticsController.java    # Dashboard summary, metrics
+    │   ├── ClaimController.java        # Claim CRUD, status transitions
+    │   ├── CustomerController.java     # Customer CRUD and KYC
+    │   ├── FileUploadController.java   # Multipart document upload
+    │   ├── FraudController.java        # Trigger and retrieve fraud predictions
+    │   ├── PolicyController.java       # Policy CRUD and lifecycle
+    │   └── ProductController.java      # Insurance product catalog
+    │
+    ├── dto/                            # Request/Response data transfer objects
+    │   ├── LoginRequest.java           # { email, password }
+    │   ├── RegisterRequest.java        # { name, email, password, role }
+    │   ├── AuthResponse.java           # { token, user }
+    │   ├── AgentRequest/Response.java
+    │   ├── ClaimRequest/Response.java
+    │   ├── CustomerRequest/Response.java
+    │   ├── PolicyRequest/Response.java
+    │   ├── ProductRequest/Response.java
+    │   ├── FraudPredictionResponse.java
+    │   ├── PaymentResponse.java
+    │   ├── DashboardSummary.java
+    │   └── UserDto.java
+    │
+    ├── model/                          # JPA entity classes
+    │   ├── User.java                   # Core user (all roles)
+    │   ├── Agent.java                  # Insurance agent profile
+    │   ├── Customer.java               # Customer profile with KYC
+    │   ├── Policy.java                 # Insurance policy
+    │   ├── Claim.java                  # Insurance claim
+    │   ├── ClaimDocument.java          # Attached documents for claims
+    │   ├── FraudPrediction.java        # ML fraud prediction result
+    │   ├── InsuranceProduct.java       # Product catalog entry
+    │   ├── Payment.java                # Premium/settlement payment
+    │   └── enums/
+    │       ├── ClaimStatus.java        # PENDING, APPROVED, REJECTED, SETTLED
+    │       ├── KycStatus.java          # PENDING, VERIFIED, REJECTED
+    │       ├── PaymentStatus.java      # PENDING, COMPLETED, FAILED
+    │       ├── PaymentType.java        # PREMIUM, SETTLEMENT
+    │       ├── PolicyStatus.java       # ACTIVE, EXPIRED, CANCELLED, LAPSED
+    │       ├── ProductType.java        # MOTOR, HEALTH, PROPERTY, LIFE
+    │       └── Role.java               # ADMIN, AGENT, CUSTOMER, CLAIMS_MANAGER
+    │
+    ├── repository/                     # Spring Data JPA interfaces
+    │   ├── UserRepository.java
+    │   ├── AgentRepository.java
+    │   ├── CustomerRepository.java
+    │   ├── PolicyRepository.java
+    │   ├── ClaimRepository.java
+    │   ├── ClaimDocumentRepository.java
+    │   ├── FraudPredictionRepository.java
+    │   ├── InsuranceProductRepository.java
+    │   └── PaymentRepository.java
+    │
+    ├── service/                        # Business logic layer
+    │   ├── AuthService.java            # Registration, login, token issuance
+    │   ├── AgentService.java
+    │   ├── AnalyticsService.java       # Dashboard aggregation queries
+    │   ├── ClaimService.java           # Claim CRUD + status workflows
+    │   ├── CustomerService.java
+    │   ├── FileStorageService.java     # Local disk / S3 file storage
+    │   ├── FraudService.java           # Calls Python service, stores predictions
+    │   ├── NotificationService.java    # Calls Node.js service via HTTP
+    │   ├── PolicyService.java
+    │   └── ProductService.java
+    │
+    ├── security/
+    │   ├── JwtUtil.java                # JWT generation, validation, claims parsing
+    │   ├── JwtFilter.java              # OncePerRequestFilter — extracts Bearer token
+    │   ├── SecurityConfig.java         # HttpSecurity, CORS, stateless session, route permissions
+    │   └── UserDetailsServiceImpl.java # Loads UserDetails from DB by email
+    │
+    ├── exception/
+    │   ├── GlobalExceptionHandler.java # @ControllerAdvice — maps exceptions to HTTP codes
+    │   ├── ResourceNotFoundException.java  # 404
+    │   ├── BadRequestException.java        # 400
+    │   └── UnauthorizedException.java      # 401
+    │
+    └── util/
+        └── DataSeeder.java             # Seeds initial data on startup (dev mode)
+
+src/main/resources/
+    ├── application.properties          # All configuration
+    └── schema.sql                      # Manual SQL schema (optional reference)
+```
+
+---
+
+## Data Model & Schema
+
+The platform uses **MySQL** with the following core tables:
+
+| Table                  | Description                                             |
+|------------------------|---------------------------------------------------------|
+| `users`                | All platform users (admin, agent, customer, manager)    |
+| `agents`               | Agent profiles linked to users                          |
+| `customers`            | Customer profiles with KYC status and agent assignment  |
+| `insurance_products`   | Product catalog (Motor, Health, Property, Life)         |
+| `policies`             | Active insurance policies linking customers to products |
+| `claims`               | Filed insurance claims with status and fraud score      |
+| `claim_documents`      | Documents (PDFs, images) attached to claims             |
+| `payments`             | Premium and settlement payment records                  |
+| `fraud_predictions`    | ML fraud prediction results per claim                   |
+
+Key indexes: `claims.status`, `claims.fraud_score`, `policies.customer_id`, `policies.status`, `users.email`
+client/
+├── Dockerfile                  # Container definition for production
+├── nginx.conf                  # Nginx config for serving the built app
+├── index.html                  # HTML entry point
+├── vite.config.js              # Vite configuration (React + Tailwind plugins)
+├── eslint.config.js            # ESLint rules
+├── package.json                # Dependencies and scripts
 │
-└── examples/
-    ├── NotificationBell.jsx        # React component: notification bell with badge
-    ├── NotificationList.jsx        # React component: dropdown notification list
-    ├── NotificationProvider.jsx    # React context provider for notification state
-    ├── NotificationBell.css        # CSS for bell component
-    └── socket-test.html            # Standalone HTML socket test client
+└── src/
+    ├── main.jsx                # App bootstrap (ReactDOM.createRoot, BrowserRouter)
+    ├── App.jsx                 # Root route definitions with ProtectedRoute guards
+    ├── index.css               # Global Tailwind base styles
+    │
+    ├── assets/                 # Static images (hero.png, react.svg, vite.svg)
+    │
+    ├── components/
+    │   ├── charts/
+    │   │   └── Charts.jsx          # Recharts wrappers (line, bar, pie charts)
+    │   ├── common/
+    │   │   ├── DataTable.jsx       # Reusable sortable/filterable table
+    │   │   ├── StatCard.jsx        # KPI metric cards for dashboards
+    │   │   └── StatusBadge.jsx     # Color-coded status labels
+    │   ├── layout/
+    │   │   ├── DashboardLayout.jsx # Shell: sidebar + topnav + <Outlet>
+    │   │   ├── ProtectedRoute.jsx  # Role-based route guard HOC
+    │   │   ├── Sidebar.jsx         # Navigation sidebar (role-aware links)
+    │   │   └── TopNavbar.jsx       # Header with user info and notifications
+    │   └── modals/
+    │       └── Modal.jsx           # Generic modal dialog wrapper
+    │
+    ├── context/
+    │   └── AuthContext.jsx         # Global auth state (JWT, user, role)
+    │
+    ├── data/
+    │   └── mockData.js             # Fallback mock data for offline/dev mode
+    │
+    ├── hooks/
+    │   └── useApiData.js           # Custom hook: loading/error/data pattern
+    │
+    ├── pages/
+    │   ├── admin/
+    │   │   └── AdminDashboard.jsx      # Admin KPIs, agent overview, system stats
+    │   ├── agent/
+    │   │   └── AgentDashboard.jsx      # Agent portfolio, commissions, policy list
+    │   ├── analytics/
+    │   │   └── AnalyticsDashboard.jsx  # Charts: claims trends, fraud rates, revenue
+    │   ├── auth/
+    │   │   └── LoginPage.jsx           # JWT login form
+    │   ├── claims/
+    │   │   ├── ClaimsSubmission.jsx    # Claim filing form with document upload
+    │   │   └── ClaimsWorkflow.jsx      # Claims queue, status transitions
+    │   ├── customer/
+    │   │   └── CustomerDashboard.jsx   # Customer's own policies and claims
+    │   ├── customerMgmt/
+    │   │   └── CustomerManagement.jsx  # Admin/agent customer list and KYC
+    │   ├── fraud/
+    │   │   └── FraudReport.jsx         # ML fraud scores and flagged claims
+    │   ├── notifications/
+    │   │   └── NotificationsCenter.jsx # Real-time notification inbox
+    │   └── policy/
+    │       └── PolicyManagement.jsx    # Policy CRUD and status management
+    │
+    ├── services/
+    │   ├── api.js              # Axios instance with JWT interceptors
+    │   ├── authService.js      # Login, logout, token management
+    │   ├── dataService.js      # API call functions per domain
+    │   └── socketService.js    # Socket.IO connection and event helpers
+    │
+    └── utils/
+        └── helpers.js          # Date formatting, currency, status mappers
 ```
 
 ---
 
-## API Endpoints
+## Pages & Role Access
 
-All REST endpoints require `Authorization: Bearer <JWT>` unless noted.
-
-### Health
-| Method | Endpoint   | Auth    | Description              |
-|--------|------------|---------|--------------------------|
-| GET    | `/health`  | Public  | Service health check     |
-
-### Notifications
-| Method | Endpoint                          | Auth      | Description                              |
-|--------|-----------------------------------|-----------|------------------------------------------|
-| GET    | `/notifications`                  | Required  | Get all notifications for current user   |
-| PATCH  | `/notifications/:id/read`         | Required  | Mark a specific notification as read     |
-| PATCH  | `/notifications/read-all`         | Required  | Mark all notifications as read           |
-| DELETE | `/notifications/:id`              | Required  | Delete a notification                    |
-
-### Events (called by Spring Boot)
-| Method | Endpoint          | Auth      | Description                                    |
-|--------|-------------------|-----------|------------------------------------------------|
-| POST   | `/events/trigger` | Required  | Trigger a new notification event               |
-
-**Sample event trigger payload (from Spring Boot):**
-```json
-{
-  "userId": 42,
-  "eventType": "CLAIM_APPROVED",
-  "title": "Your claim has been approved",
-  "message": "Claim #CLM-2024-001 for ₹50,000 has been approved and will be settled within 3 business days.",
-  "role": "CUSTOMER"
-}
-```
+| Route              | Page                   | Allowed Roles                                  |
+|--------------------|------------------------|------------------------------------------------|
+| `/login`           | LoginPage              | Public                                         |
+| `/admin`           | AdminDashboard         | `admin`                                        |
+| `/agent`           | AgentDashboard         | `agent`                                        |
+| `/customer`        | CustomerDashboard      | `customer`                                     |
+| `/customers`       | CustomerManagement     | `admin`, `agent`                               |
+| `/policies`        | PolicyManagement       | `admin`, `agent`                               |
+| `/claims`          | ClaimsSubmission       | `admin`, `agent`, `customer`, `claims_manager` |
+| `/claims-workflow` | ClaimsWorkflow         | `admin`, `claims_manager`                      |
+| `/fraud-report`    | FraudReport            | `admin`, `claims_manager`                      |
+| `/analytics`       | AnalyticsDashboard     | `admin`, `claims_manager`                      |
+| `/notifications`   | NotificationsCenter    | All authenticated roles                        |
+| `*`                | Redirect to `/login`   | —                                              |
 
 ---
 
-## WebSocket Events
+## Service Layer
 
-### Connection
-The React client connects with a JWT in the socket handshake:
+### `api.js` — Axios Instance
+- Base URL: `VITE_SPRING_API_URL` (default: `http://localhost:8080/api`)
+- Attaches `Authorization: Bearer <token>` on every request via request interceptor
+- On HTTP 401 responses: clears token from localStorage and redirects to `/login`
 
-```javascript
-const socket = io('http://localhost:5001', {
-  auth: { token: localStorage.getItem('token') }
-});
-```
-
-### Room Assignment
-On connect, the socket middleware:
-1. Validates the JWT
-2. Extracts `userId` and `role`
-3. Joins the socket to `user_<userId>` (personal room)
-4. Joins the socket to `role_<ROLE>` (broadcast room)
-
-### Emitted Events
-
-| Event Name          | Direction     | Description                                 |
-|---------------------|---------------|---------------------------------------------|
-| `notification`      | Server → Client | New notification payload delivered to user |
-| `connect`           | Client ← Server | Confirms WebSocket connection              |
-| `disconnect`        | Client ← Server | Notifies of disconnection                  |
-
-### Notification Payload Shape
-```json
-{
-  "id": 123,
-  "type": "CLAIM_APPROVED",
-  "title": "Your claim has been approved",
-  "message": "Claim #CLM-2024-001 has been approved.",
-  "read": false,
-  "createdAt": "2024-11-15T10:30:00Z"
-}
-```
-
-### Emitting to a User vs. Role
-- **User-specific:** `emitToUser(userId, eventType, payload)` → sends to `user_<userId>` room
-- **Role-wide broadcast:** `emitToRole(role, eventType, payload)` → sends to `role_<ROLE>` room (e.g., all admins)
+### `socketService.js` — Socket.IO Client
+- Connects to `VITE_SOCKET_URL` (default: `http://localhost:3001`)
+- Passes `userId` as a connection query parameter
+- Auto-reconnects up to 5 times with a 1-second delay
+- Falls back to mock notification mode if the socket service is unavailable
+- Exposes `connect`, `disconnect`, `on`, `off`, `emit`, and `getSocket` methods
 
 ---
 
-## Cron Jobs
+## Authentication Flow
 
-The renewal cron job is defined in `src/cron/renewalCron.js` and initialized on server start.
-
-| Job                    | Schedule     | Description                                              |
-|------------------------|--------------|----------------------------------------------------------|
-| Policy Renewal Reminder| Daily (00:00)| Queries DB for policies expiring in the next 30 days and pushes renewal reminders to affected customers and their agents |
-
----
-
-## Database Schema
-
-The service uses a **separate MySQL database** (`insuranceiq_notifications`) from the main Spring Boot database. Schema is in `schema.sql`.
-
-```sql
--- Notifications
-CREATE TABLE notifications (
-  id          INT AUTO_INCREMENT PRIMARY KEY,
-  user_id     INT NOT NULL,
-  type        VARCHAR(100) NOT NULL,
-  title       VARCHAR(255) NOT NULL,
-  message     TEXT NOT NULL,
-  is_read     BOOLEAN DEFAULT FALSE,
-  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Events log (audit trail)
-CREATE TABLE events (
-  id          INT AUTO_INCREMENT PRIMARY KEY,
-  event_type  VARCHAR(100) NOT NULL,
-  payload     JSON,
-  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 ```
-
----
-
-## Authentication
-
-Both the **HTTP REST routes** and the **WebSocket connections** are protected by JWT.
-
-- REST routes use the `authMiddleware.js` Express middleware: validates `Authorization: Bearer <token>`
-- WebSocket connections use a Socket.IO middleware in `socketManager.js`: validates `socket.handshake.auth.token`
-- **The JWT secret must match the one used by Spring Boot** (`app.jwt.secret` in `application.properties`)
+1. User submits credentials on /login
+2. authService calls POST /api/auth/login → receives { token, user, role }
+3. Token is stored in localStorage
+4. AuthContext is updated with user info and role
+5. ProtectedRoute checks AuthContext.user + role before rendering
+6. On 401 responses, Axios interceptor clears storage and redirects to /login
+7. socketService.connect(userId) is called post-login for real-time events
+```
 
 ---
 
 ## Environment Variables
 
-Create a `.env` file in the `notification-service/` directory:
+Create a `.env` file in the `client/` directory:
 
 ```env
-PORT=5001
+# Spring Boot Backend
+VITE_SPRING_API_URL=http://localhost:8080/api
 
-# MySQL Database (separate from Spring Boot's DB)
-DB_HOST=localhost
-DB_PORT=3306
-DB_NAME=insuranceiq_notifications
-DB_USER=root
-DB_PASSWORD=your_password
-
-# Must match Spring Boot's JWT secret exactly
-JWT_SECRET=InsuranceIQSecretKey2024VeryLongSecretKeyForHS256AlgorithmMinimum256Bits
-
-# Spring Boot URL (for querying policy data in cron jobs)
-SPRING_BOOT_URL=http://localhost:8080
+# Node.js Notification Service
+VITE_SOCKET_URL=http://localhost:3001
 ```
+
+For cloud/production deployment, replace with EC2 instance URLs or load balancer endpoints.
 
 ---
 
@@ -295,7 +395,556 @@ SPRING_BOOT_URL=http://localhost:8080
 ### Prerequisites
 - Node.js **18.x or higher**
 - npm **9.x or higher**
-- MySQL 8.x running locally (separate DB from Spring Boot)
+
+### Steps
+
+```bash
+# 1. Clone the repo and switch to the frontend branch
+git clone https://github.com/Neel-Asher/ClaimsManagementApp.git
+cd ClaimsManagementApp
+git checkout dev-react-frontend
+
+# 2. Navigate to the client directory
+cd client
+
+# 3. Install dependencies
+npm install
+
+# 4. Create the environment file
+cp .env.example .env   # or manually create .env with the variables above
+```
+
+---
+
+## Running the App
+
+### Development mode (with Vite HMR)
+```bash
+npm run dev
+```
+App will be available at: `http://localhost:5173`
+
+### Production build
+```bash
+npm run build
+# Output goes to client/dist/
+```
+
+### Preview the production build locally
+```bash
+npm run preview
+```
+
+### Lint
+```bash
+npm run lint
+```
+
+---
+
+## Docker Setup
+
+A `Dockerfile` and `nginx.conf` are included for containerized deployment.
+
+```bash
+# Build the Docker image
+docker build -t insuranceiq-frontend .
+
+# Run the container
+docker run -p 80:80 insuranceiq-frontend
+```
+
+The Dockerfile builds the Vite app and serves it through Nginx on port 80.
+
+---
+
+## Inter-Service Communication
+
+| Target Service             | Protocol   | Default URL               | Purpose                          |
+|----------------------------|------------|---------------------------|----------------------------------|
+| Spring Boot Backend        | HTTP/REST  | `http://localhost:8080/api` | Auth, claims, policies, fraud   |
+| Node.js Notification Svc   | WebSocket  | `http://localhost:3001`    | Real-time push notifications     |
+
+The frontend does **not** call the Python ML service directly — all ML/fraud requests are proxied through Spring Boot.
+
+---
+
+## Component Architecture
+
+```
+App.jsx
+└── BrowserRouter
+    ├── /login → LoginPage
+    └── ProtectedRoute (any authenticated role)
+        └── DashboardLayout
+            ├── Sidebar (role-aware navigation links)
+            ├── TopNavbar (user info, notification badge)
+            └── <Outlet> (rendered page)
+                ├── AdminDashboard
+                │   └── StatCard, Charts, DataTable
+                ├── AgentDashboard
+                │   └── StatCard, DataTable
+                ├── ClaimsSubmission
+                │   └── Modal (document upload)
+                ├── ClaimsWorkflow
+                │   └── DataTable, StatusBadge
+                ├── FraudReport
+                │   └── Charts, StatusBadge
+                ├── AnalyticsDashboard
+                │   └── Charts (Recharts)
+                └── NotificationsCenter
+                    └── (Socket.IO event listener)
+```
+┌──────────────────────────────────────────────────────────────┐
+│          Python FastAPI Service (Port 8000)                  │
+│                                                              │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │                    Routers                            │   │
+│  │  fraud_router.py │ etl_router.py │ analytics_router   │   │
+│  └───────────────────────────────────────────────────────┘   │
+│                            │                                 │
+│  ┌───────────────────────────────────────────────────────┐   │
+│  │                    Services                           │   │
+│  │  fraud_detection.py │ etl_service.py │ analytics_svc  │   │
+│  └───────────────────────────────────────────────────────┘   │
+│              │                                               │
+│  ┌────────────────────┐   ┌───────────────────────────────┐  │
+│  │  ml/ (predictor)   │   │  models/ (DB, Schemas)        │  │
+│  │  train_model.py    │   │  SQLAlchemy + SQLite/Postgres │  │
+│  └────────────────────┘   └───────────────────────────────┘  │
+└─────────────────────────────┬────────────────────────────────┘
+                              │ HTTP POST
+                              ▼
+                  ┌─────────────────────────┐
+                  │  Spring Boot Backend    │
+                  │  :8080                  │
+                  └─────────────────────────┘
+```
+
+---
+
+## Tech Stack & Versions
+
+| Technology          | Version    | Purpose                                      |
+|---------------------|------------|----------------------------------------------|
+| Python              | 3.11+      | Runtime                                      |
+| FastAPI             | >=0.110.0  | Async web framework and OpenAPI generation   |
+| Uvicorn             | >=0.29.0   | ASGI server (with standard extras)           |
+| Pydantic            | >=2.6.0    | Request/response validation and settings     |
+| Pydantic-Settings   | >=2.2.0    | Environment-based configuration              |
+| SQLAlchemy          | >=2.0.0    | ORM and raw SQL execution                    |
+| aiosqlite           | >=0.20.0   | Async SQLite adapter                         |
+| pandas              | >=2.2.0    | CSV ingestion and data transformation        |
+| numpy               | >=1.26.0   | Numerical operations for ML features         |
+| scikit-learn        | >=1.4.0    | ML model (RandomForest fraud classifier)     |
+| joblib              | >=1.3.0    | Model serialization (save/load `.pkl`)       |
+| pytest              | >=8.0.0    | Test framework                               |
+| httpx               | >=0.27.0   | Async HTTP client (for integration tests)    |
+| pytest-asyncio      | >=0.23.0   | Async test support                           |
+
+---
+
+## Folder Structure
+
+```
+(root)/
+├── main.py                     # FastAPI app creation, router registration, lifespan
+├── config.py                   # Settings class (Pydantic BaseSettings), env loading
+├── requirements.txt            # All Python dependencies
+├── insuranceiq.db              # SQLite database (dev/local — gitignored in prod)
+├── .env.example                # Example environment file
+│
+├── ml/
+│   ├── __init__.py
+│   ├── train_model.py          # Model training script (produces fraud_model.pkl)
+│   └── predictor.py            # Model loading and inference helpers
+│
+├── models/
+│   ├── __init__.py
+│   ├── database.py             # SQLAlchemy engine, session factory, create_tables()
+│   └── schemas.py              # Pydantic schemas (request/response models, HealthResponse)
+│
+├── routers/
+│   ├── __init__.py
+│   ├── fraud_router.py         # /predict/fraud/* endpoints
+│   ├── etl_router.py           # /etl/* endpoints (CSV upload and process)
+│   └── analytics_router.py     # /analytics/* endpoints
+│
+├── services/
+│   ├── __init__.py
+│   ├── fraud_detection.py      # RuleBasedDetector + MLFraudDetector classes
+│   ├── etl_service.py          # CSV ingestion logic and data cleaning
+│   ├── analytics_service.py    # Aggregation queries for metrics
+│   └── notification_client.py  # HTTP client to notify Node.js service (optional)
+│
+├── data/
+│   └── sample/
+│       ├── claims_history.csv         # Sample claims data
+│       ├── customer_profiles.csv      # Sample customer data
+│       ├── agent_performance.csv      # Sample agent data
+│       └── policy_data.csv            # Sample policy data
+│
+├── scripts/
+│   ├── generate_data.py        # Script to generate synthetic sample data
+│   ├── seed_db.py              # Script to populate the DB from sample CSVs
+│   └── test_live_server.py     # Manual smoke-test script against a running server
+│
+└── tests/
+    ├── __init__.py
+    ├── conftest.py             # pytest fixtures (test client, test DB)
+    ├── test_fraud.py           # Tests for fraud prediction endpoints
+    ├── test_etl.py             # Tests for ETL upload and processing
+    └── test_analytics.py       # Tests for analytics endpoints
+```
+
+---
+
+## API Endpoints
+
+### Authentication
+| Method | Endpoint               | Description                    | Auth    |
+|--------|------------------------|--------------------------------|---------|
+| POST   | `/api/auth/login`      | Login → returns JWT token      | Public  |
+| POST   | `/api/auth/register`   | Register new user              | Public  |
+
+### Claims
+| Method | Endpoint                        | Description                    | Auth       |
+|--------|---------------------------------|--------------------------------|------------|
+| GET    | `/api/claims`                   | List all claims                | Protected  |
+| POST   | `/api/claims`                   | File a new claim               | Protected  |
+| GET    | `/api/claims/{id}`              | Get claim details              | Protected  |
+| PUT    | `/api/claims/{id}/status`       | Update claim status            | Admin/Mgr  |
+
+### Policies
+| Method | Endpoint                  | Description           | Auth        |
+|--------|---------------------------|-----------------------|-------------|
+| GET    | `/api/policies`           | List all policies     | Protected   |
+| POST   | `/api/policies`           | Create policy         | Admin/Agent |
+| GET    | `/api/policies/{id}`      | Get policy details    | Protected   |
+| PUT    | `/api/policies/{id}`      | Update policy         | Admin/Agent |
+
+### Customers
+| Method | Endpoint               | Description              | Auth         |
+|--------|------------------------|--------------------------|--------------|
+| GET    | `/api/customers`       | List all customers       | Admin/Agent  |
+| POST   | `/api/customers`       | Create customer          | Admin/Agent  |
+| PUT    | `/api/customers/{id}`  | Update customer/KYC      | Admin/Agent  |
+
+### Fraud
+| Method | Endpoint                        | Description                         | Auth     |
+|--------|---------------------------------|-------------------------------------|----------|
+| POST   | `/api/fraud/predict/{claimId}`  | Trigger ML fraud prediction         | Admin/Mgr|
+| GET    | `/api/fraud/report`             | Get all fraud predictions           | Admin/Mgr|
+
+### Analytics
+| Method | Endpoint                    | Description               | Auth     |
+|--------|-----------------------------|---------------------------|----------|
+| GET    | `/api/analytics/dashboard`  | Aggregated KPI summary    | Admin/Mgr|
+| GET    | `/api/analytics/claims`     | Claims trend data         | Admin/Mgr|
+
+### File Upload
+| Method | Endpoint                         | Description                   | Auth      |
+|--------|----------------------------------|-------------------------------|-----------|
+| POST   | `/api/files/upload/{claimId}`    | Upload claim document         | Protected |
+
+**Full interactive docs:** `http://localhost:8080/swagger-ui.html`
+
+---
+
+## Security & JWT
+
+- **Algorithm:** HS256
+- **Expiry:** 24 hours (86,400,000 ms — configurable via `app.jwt.expiration-ms`)
+- **Token delivery:** `Authorization: Bearer <token>` header
+- **Route access** is controlled via `SecurityConfig.java` using `@PreAuthorize` and `HttpSecurity` role matchers
+- The `JwtFilter` extracts and validates the token on every incoming request before it reaches a controller
+- Stateless session: no `HttpSession` is created (`SessionCreationPolicy.STATELESS`)
+
+---
+
+## External Service Integration
+
+### Python ML Service (`FraudService.java`)
+- Called via HTTP POST to `app.fraud-service.url/predict/fraud/{claimId}`
+- Returns a `FraudPredictionResponse` with `fraud_probability`, `risk_status`, and `recommendation`
+- Result is persisted to the `fraud_predictions` table
+- The claim's `fraud_score` field is updated accordingly
+
+### Node.js Notification Service (`NotificationService.java`)
+- Called via HTTP POST to `app.notification-service.url`
+- Triggered on events: claim status change, KYC approval, policy renewal
+- Passes `userId`, `eventType`, and `message` payload
+
+---
+
+## Environment & Configuration
+
+All config lives in `src/main/resources/application.properties`:
+
+```properties
+# Server
+server.port=8080
+
+# MySQL
+spring.datasource.url=jdbc:mysql://localhost:3306/insuranceiq_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+spring.datasource.username=root
+spring.datasource.password=root
+
+# JPA
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+spring.jpa.database-platform=org.hibernate.dialect.MySQLDialect
+
+# JWT
+app.jwt.secret=<your-256-bit-secret>
+app.jwt.expiration-ms=86400000
+
+# File Upload
+spring.servlet.multipart.max-file-size=10MB
+app.upload.dir=./uploads
+
+# External Services
+app.fraud-service.url=http://localhost:8000
+app.notification-service.url=http://localhost:3001
+
+# Swagger
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.api-docs.path=/api-docs
+```
+
+> **Production:** Override sensitive values via environment variables or a secrets manager (AWS Secrets Manager, etc.)
+
+---
+
+## Installation & Setup
+
+### Prerequisites
+- Java 17
+- Maven 3.8+
+- MySQL 8.x running locally (or via Docker)
+
+### Steps
+
+```bash
+# 1. Clone and switch to the backend branch
+git clone https://github.com/Neel-Asher/ClaimsManagementApp.git
+cd ClaimsManagementApp
+git checkout dev-spring-backend
+
+# 2. Create the database in MySQL
+mysql -u root -p
+CREATE DATABASE insuranceiq_db;
+exit;
+
+# 3. (Optional) Run the schema manually
+mysql -u root -p insuranceiq_db < server/src/main/resources/schema.sql
+
+# 4. Update application.properties with your MySQL credentials
+
+# 5. Build the project
+cd server
+mvn clean install
+```
+
+---
+
+## Running the App
+
+```bash
+# Run via Maven
+mvn spring-boot:run
+
+# Or run the built JAR
+java -jar target/insurance-iq-backend-1.0.0.jar
+```
+
+Server starts on: `http://localhost:8080`
+
+---
+
+## Docker Setup
+
+```bash
+# From the server/ directory
+docker build -t insuranceiq-backend .
+
+# Or use the provided Docker Compose (starts app + MySQL together)
+cd server
+docker-compose up --build
+```
+
+The `docker-compose.yml` spins up:
+- `insuranceiq-backend` — Spring Boot app on port 8080
+- `mysql` — MySQL 8 on port 3306 with `insuranceiq_db` initialized
+
+---
+
+## Swagger / OpenAPI Docs
+
+Once the server is running:
+
+- **Swagger UI:** `http://localhost:8080/swagger-ui.html`
+- **OpenAPI JSON:** `http://localhost:8080/api-docs`
+
+A complete **Postman collection** is also included at `server/InsuranceIQ.postman_collection.json` — import it into Postman to test all endpoints.
+### Health
+| Method | Endpoint   | Description                       |
+|--------|------------|-----------------------------------|
+| GET    | `/`        | Health check (status, version)    |
+| GET    | `/health`  | Health check alias (load balancers)|
+
+### Fraud Detection
+| Method | Endpoint                       | Description                                      |
+|--------|--------------------------------|--------------------------------------------------|
+| POST   | `/predict/fraud/{claim_id}`    | Predict fraud for a given claim ID               |
+| POST   | `/predict/fraud/batch`         | Batch fraud prediction for multiple claims       |
+| GET    | `/predict/fraud/report`        | Get all stored fraud predictions                 |
+
+**Sample fraud prediction request body:**
+```json
+{
+  "claim_amount": 250000,
+  "days_since_policy_start": 45,
+  "claim_type": "motor_accident",
+  "previous_claims_count": 2,
+  "customer_age": 34,
+  "policy_premium_ratio": 0.85,
+  "surveyor_mismatch_flag": 1
+}
+```
+
+### ETL
+| Method | Endpoint              | Description                                         |
+|--------|-----------------------|-----------------------------------------------------|
+| POST   | `/etl/upload`         | Upload a CSV file for processing                    |
+| POST   | `/etl/process`        | Process the most recently uploaded CSV              |
+| GET    | `/etl/status`         | Check the status of the last ETL run                |
+
+### Analytics
+| Method | Endpoint                       | Description                              |
+|--------|--------------------------------|------------------------------------------|
+| GET    | `/analytics/summary`           | High-level platform KPIs                 |
+| GET    | `/analytics/claims/trend`      | Claims volume over time                  |
+| GET    | `/analytics/fraud/distribution`| Fraud risk distribution breakdown        |
+| GET    | `/analytics/agents`            | Agent performance metrics                |
+
+**Interactive docs (Swagger UI):** `http://localhost:8000/docs`
+**ReDoc:** `http://localhost:8000/redoc`
+
+---
+
+## Fraud Detection Engine
+
+The service supports two modes, switchable via the `FRAUD_DETECTION_MODE` environment variable:
+
+### Rule-Based Mode (`FRAUD_DETECTION_MODE=RULE_BASED`)
+Uses weighted heuristics based on:
+- Claim amount relative to policy coverage
+- Time since policy inception (early claims are higher risk)
+- Number of previous claims by the same customer
+- Surveyor/assessor mismatch flag
+
+### ML Mode (`FRAUD_DETECTION_MODE=ML`)
+Uses a trained `scikit-learn` classifier (RandomForest by default). Feature vector:
+
+| Feature                   | Index | Description                                   |
+|---------------------------|-------|-----------------------------------------------|
+| `claim_amount`            | 0     | Claimed amount in currency units              |
+| `days_since_policy_start` | 1     | Days between policy start and claim filing    |
+| `claim_type`              | 2     | Encoded: motor=0, health=1, property=2, life=3|
+| `previous_claims_count`   | 3     | Number of prior claims by this customer       |
+| `customer_age`            | 4     | Customer age in years                         |
+| `policy_premium_ratio`    | 5     | claim_amount / annual_premium                 |
+| `surveyor_mismatch_flag`  | 6     | 1 if surveyor assigned ≠ expected, else 0     |
+
+The model outputs a fraud probability (0–100%). Predictions are stored to the local DB and the result is returned to Spring Boot.
+
+---
+
+## ETL Pipeline
+
+The ETL service ingests CSV files from the `/data/sample/` directory or via HTTP upload. The pipeline:
+
+1. **Validate** the CSV schema (required columns, data types)
+2. **Clean** the data (handle nulls, normalize strings, parse dates)
+3. **Transform** into the internal Pydantic schemas
+4. **Load** into the SQLite/PostgreSQL database via SQLAlchemy
+5. **Return** a summary (records processed, errors, skipped)
+
+Supported CSV types: `claims_history`, `customer_profiles`, `agent_performance`, `policy_data`
+
+---
+
+## Analytics Service
+
+Pre-built aggregation functions include:
+
+- **Platform summary:** total claims, open claims, fraud-flagged count, total premium collected
+- **Claims trend:** daily/weekly claim volume over a configurable time window
+- **Fraud distribution:** breakdown by risk level (Low / Medium / High)
+- **Agent performance:** policies sold, claims handled, commission earned per agent
+
+---
+
+## Database
+
+- **Default (dev):** SQLite at `./insuranceiq.db` — no setup required
+- **Production:** Set `DATABASE_URL` to a PostgreSQL connection string
+
+Tables are auto-created on startup via `create_tables()` in `models/database.py` using SQLAlchemy metadata.
+
+---
+
+## Configuration
+
+All settings are in `config.py` using Pydantic `BaseSettings`. Values are loaded from environment variables or a `.env` file.
+
+| Setting               | Default                         | Description                            |
+|-----------------------|---------------------------------|----------------------------------------|
+| `APP_NAME`            | InsuranceIQ Intelligence Service| Service display name                   |
+| `APP_VERSION`         | 1.0.0                           | Semantic version                       |
+| `DEBUG`               | True                            | Enable debug logging and auto-reload   |
+| `HOST`                | 0.0.0.0                         | Server bind address                    |
+| `PORT`                | 8000                            | Server bind port                       |
+| `DATABASE_URL`        | sqlite:///./insuranceiq.db      | SQLAlchemy DB connection string        |
+| `DB_ECHO`             | False                           | Log all SQL statements                 |
+| `FRAUD_DETECTION_MODE`| RULE_BASED                      | `RULE_BASED` or `ML`                   |
+| `ML_MODEL_PATH`       | ml/fraud_model.pkl              | Path to trained model file             |
+| `CORS_ORIGINS`        | localhost:3000,8080,5173        | Comma-separated allowed origins        |
+| `DATA_DIR`            | data/sample                     | Directory of sample CSVs               |
+| `UPLOAD_DIR`          | data/uploads                    | Directory for ETL uploads              |
+
+---
+
+## Environment Variables
+
+Create a `.env` file in the root directory:
+
+```env
+APP_NAME=InsuranceIQ Intelligence Service
+APP_VERSION=1.0.0
+DEBUG=True
+HOST=0.0.0.0
+PORT=8000
+
+# Database (SQLite for dev, Postgres for prod)
+DATABASE_URL=sqlite:///./insuranceiq.db
+
+# Fraud Detection
+FRAUD_DETECTION_MODE=RULE_BASED
+ML_MODEL_PATH=ml/fraud_model.pkl
+
+# CORS
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080,http://localhost:5173
+```
+
+---
+
+## Installation & Setup
+
+### Prerequisites
+- Python 3.11 or higher
+- `pip` or `pipenv`
 
 ### Steps
 
@@ -303,24 +952,21 @@ SPRING_BOOT_URL=http://localhost:8080
 # 1. Clone and switch to the branch
 git clone https://github.com/Neel-Asher/ClaimsManagementApp.git
 cd ClaimsManagementApp
-git checkout dev-node-notifications-backend
+git checkout dev-python-ml-service
 
-# 2. Navigate to the service directory
-cd notification-service
+# 2. Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate        # On Windows: venv\Scripts\activate
 
 # 3. Install dependencies
-npm install
+pip install -r requirements.txt
 
-# 4. Create the environment file
+# 4. Set up environment
 cp .env.example .env
-# Edit .env with your MySQL credentials and JWT secret
+# Edit .env as needed
 
-# 5. Create the MySQL database and run the schema
-mysql -u root -p
-CREATE DATABASE insuranceiq_notifications;
-exit;
-
-mysql -u root -p insuranceiq_notifications < schema.sql
+# 5. (Optional) Seed the database with sample data
+python scripts/seed_db.py
 ```
 
 ---
@@ -328,51 +974,56 @@ mysql -u root -p insuranceiq_notifications < schema.sql
 ## Running the Service
 
 ```bash
-# Development (with auto-restart via nodemon)
-npm run dev
+# Development (auto-reload on file changes)
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Or run via Python directly
+python main.py
 
 # Production
-npm start
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-Server will start on: `http://localhost:5001`
-
-On startup you will see:
-```
-╔══════════════════════════════════════════════════════╗
-║   InsuranceIQ — Notification Service                 ║
-║   AI Powered Insurance & Claims Management Platform  ║
-╠══════════════════════════════════════════════════════╣
-║    Server running on port 5001                       ║
-║    Socket.IO ready                                   ║
-║    MySQL connected                                   ║
-║    Cron jobs scheduled                               ║
-╚══════════════════════════════════════════════════════╝
-```
+Service will be available at: `http://localhost:8000`
 
 ---
 
-## React Client Integration
+## Training the ML Model
 
-Pre-built React example components are in the `examples/` directory:
+Before using `FRAUD_DETECTION_MODE=ML`, you must train and save the model:
 
-| File                        | Description                                         |
-|-----------------------------|-----------------------------------------------------|
-| `NotificationBell.jsx`      | Bell icon with unread count badge                   |
-| `NotificationList.jsx`      | Dropdown list of recent notifications               |
-| `NotificationProvider.jsx`  | React context that manages socket connection + state|
-| `NotificationBell.css`      | Styles for the bell component                       |
-| `socket-test.html`          | Standalone browser test page (no React required)    |
+```bash
+# Generate synthetic training data (if needed)
+python scripts/generate_data.py
 
-To integrate into the React app, wrap the app with `NotificationProvider` and use `NotificationBell` in the navbar. The `socketService.js` in the React frontend branch is already pre-configured to connect to this service.
+# Train the model — outputs ml/fraud_model.pkl
+python ml/train_model.py
+```
+
+The training script:
+1. Loads `data/sample/claims_history.csv`
+2. Engineers the 7 fraud features
+3. Trains a RandomForestClassifier
+4. Serializes the model to `ml/fraud_model.pkl` via joblib
+5. Prints accuracy and classification report
 
 ---
 
-## Inter-Service Communication
+## Testing
 
-| Caller            | Method   | Endpoint                              | Purpose                                 |
-|-------------------|----------|---------------------------------------|-----------------------------------------|
-| Spring Boot       | HTTP POST| `/events/trigger`                     | Trigger notification on business event  |
-| React Frontend    | WebSocket| Socket.IO connection on `:5001`       | Receive real-time notification push     |
-| React Frontend    | HTTP GET | `/notifications`                      | Fetch notification history/inbox        |
-| Cron Job          | Internal | (queries Spring Boot `/api/policies`) | Check expiring policies for reminders   |
+```bash
+# Run all tests
+pytest
+
+# Run a specific test file
+pytest tests/test_fraud.py -v
+
+# Run with coverage
+pytest --cov=. --cov-report=term-missing
+```
+
+Test coverage includes:
+- Fraud prediction endpoint (rule-based and ML mode)
+- ETL upload and processing
+- Analytics summary and trend endpoints
+- Edge cases: missing fields, invalid claim types, zero amounts
