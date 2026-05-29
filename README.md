@@ -1,5 +1,5 @@
 # InsuranceIQ — AI-Powered Insurance Intelligence Platform
-### Branch: `dev`
+### Branch: `main`
 
 > A fully distributed, microservices-based enterprise insurance platform that automates policy issuance, customer onboarding, claims processing, real-time fraud detection, and push notifications. Built with React, Spring Boot, Python FastAPI, Node.js, and deployed on AWS EKS.
 
